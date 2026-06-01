@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gun112"
+version = "1.0.0"
+description = "GUN-112 PDF Encryption Protocol"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Security Team" }
+]
+dependencies = [
+    "cryptography==42.0.2",
+    "argon2-cffi==23.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==7.4.3",
+    "pytest-cov==4.1.0"
+]
+
+[project.scripts]
+gun112 = "gun112.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gun112"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
