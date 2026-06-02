@@ -1,5 +1,16 @@
 """
-PDF Encryption Layer Package
+GUN-112 PDF Encryption Protocol Suite
+
+Two encryption modes:
+
+  GUN-112 (password-based)
+    AES-256-GCM with Argon2/PBKDF2 key derivation, time-based cryptographic
+    challenge, and rate-limiting brute-force protection.
+
+  GUN-112-GKP (Ghost Key Protocol — identity/asymmetric mode)
+    RSA-4096 key wrapping via the recipient's public Identity Token.
+    No shared password required. Only the recipient's physical device
+    (holding the matching GKP private key) can decrypt the file.
 """
 
 from .config import security_config
@@ -19,6 +30,7 @@ from .utils import (
 __version__ = "1.1.0"
 __author__ = "Security Team"
 __protocol__ = "GUN-112"
+__gkp_protocol__ = "GUN-112-GKP"
 
 __all__ = [
     "PDFEncryptionHandler",
@@ -33,4 +45,3 @@ __all__ = [
     "verify_password_hash",
     "create_fingerprint"
 ]
-

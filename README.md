@@ -1,458 +1,525 @@
 # GUN-112 PDF Encryption Protocol
 
-**GUN-112** - A production-ready Python library for secure PDF encryption using AES-256-GCM with nanosecond-precision time-based cryptographic challenges. Protects PDFs even if users employ simple passwords or if passwords are exposed.
-
-## 🎯 What is GUN-112?
-
-GUN-112 is an encryption protocol that adds a **time-based cryptographic challenge** layer to standard AES-256 encryption. This challenge system creates a mathematically impenetrable barrier against reverse engineering:
-
-- **Nanosecond-Precision Timestamp**: Captures the exact moment of encryption at nanosecond resolution
-- **Salted Challenge Hash**: Random salt combined with time components to prevent brute-force
-- **Cryptographic Verification**: During decryption, the challenge is regenerated and verified
-- **Impossible to Reverse-Engineer**: Even if an attacker knows the encryption date/time, they cannot measure or calculate the exact nanosecond precision retrospectively
-
-### Why This Protects Even Simple Passwords
-
-1. **Argon2 + PBKDF2 Dual-Layer Key Derivation**: Simple passwords become computationally expensive to crack
-2. **Rate Limiting**: Maximum 5 failed attempts triggers 15-minute lockout
-3. **AES-256-GCM Authenticated Encryption**: Ensures confidentiality AND detects tampering
-4. **GUN-112 Challenge Verification**: File integrity verified cryptographically - cannot be modified or replayed
-5. **Timestamp-Based Entropy**: Adds time-based key component that varies with each encryption
-
-## 🔒 Security Architecture
-
-### Layer 1: Password Hashing (Argon2)
-- GPU-resistant memory-hard hashing
-- Configurable security parameters
-- Prevents rainbow table attacks
-
-### Layer 2: Key Derivation (PBKDF2)
-- Deterministic key derivation for reliable decryption
-- PBKDF2-SHA256: 100,000 iterations
-- PBKDF2-SHA512: Additional 10,000 iterations
-- Makes brute-force attacks exponentially slower
-
-### Layer 3: Timestamp-Based Key Component
-- GUN-112 challenge captures nanosecond precision
-- Timestamp component included in final encryption key
-- Prevents replay attacks and detects tampering
-
-### Layer 4: AES-256-GCM Encryption
-- Military-grade 256-bit encryption
-- Authenticated encryption mode
-- Detects any modification to ciphertext
-
-### Layer 5: Rate Limiting
-- Tracks failed decryption attempts per file
-- Locks account after 5 failed attempts
-- 15-minute cooldown period
-
-## 📋 Requirements
-
-- Python 3.9+
-- Dependencies: `cryptography`, `argon2-cffi`, `pytest`
-
-## 🚀 Quick Start
-
-### 1. Install Dependencies
-
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 2. Basic Usage
-
-```python
-from src import PDFEncryptionHandler
-
-# Initialize handler
-handler = PDFEncryptionHandler()
-
-# Read PDF
-with open('document.pdf', 'rb') as f:
-    pdf_data = f.read()
-
-# Encrypt with password
-password = "SecurePassword123!"
-encrypted = handler.encrypt_pdf(pdf_data, password)
-
-# Save encrypted file
-with open('document.encrypted', 'wb') as f:
-    f.write(encrypted)
-
-# Later: Decrypt with password
-with open('document.encrypted', 'rb') as f:
-    encrypted_data = f.read()
-
-decrypted_pdf, metadata = handler.decrypt_pdf(encrypted_data, password)
-
-# Save decrypted PDF
-with open('document_decrypted.pdf', 'wb') as f:
-    f.write(decrypted_pdf)
-```
-
-### 3. With Metadata
-
-```python
-# Add metadata during encryption
-metadata = {
-    "author": "John Doe",
-    "title": "Confidential Report",
-    "classification": "SECRET"
-}
-
-encrypted = handler.encrypt_pdf(pdf_data, password, metadata)
-
-# Metadata is returned during decryption
-decrypted_pdf, returned_metadata = handler.decrypt_pdf(encrypted, password)
-print(returned_metadata)  # {'author': 'John Doe', ...}
-```
-
-## 📚 Project Structure
-
-```
-encryption/
-├── src/                          # Main package
-│   ├── __init__.py
-│   ├── config.py                 # Security configuration
-│   ├── utils.py                  # Helper functions
-│   ├── key_manager.py            # Argon2 key derivation
-│   ├── crypto_engine.py          # AES-256-GCM encryption
-│   ├── security_layer.py         # Rate limiting & attempt tracking
-│   └── pdf_handler.py            # Main PDF encryption handler
-├── tests/                        # Unit tests
-│   ├── __init__.py
-│   └── test_encryption.py        # Comprehensive test suite
-├── examples/                     # Usage examples
-│   ├── basic_usage.py            # Basic encryption/decryption
-│   └── advanced_config.py        # Security configuration guide
-├── requirements.txt              # Python dependencies
-└── README.md                     # This file
-```
-
-## 🔧 Configuration
-
-Edit `src/config.py` to adjust security parameters:
-
-```python
-# Default Configuration (Recommended for most use cases)
-
-# Argon2 Parameters
-ARGON2_TIME_COST = 4           # iterations (1-10 recommended)
-ARGON2_MEMORY_COST = 128       # MB (64-512 recommended)
-ARGON2_PARALLELISM = 4         # threads (2-8 recommended)
-
-# Rate Limiting
-MAX_DECRYPTION_ATTEMPTS = 5    # attempts before lockout
-LOCKOUT_DURATION = 15 minutes  # lockout time
-```
-
-## 🎓 GUN-112 Protocol Details
-
-### How GUN-112 Challenge Works
-
-1. **Challenge Creation** (during encryption):
-   ```
-   1. Capture current time at nanosecond precision
-   2. Extract time components:
-      - First 10 digits of nanoseconds (within current second)
-      - First 10 digits of microseconds (sub-millisecond precision)
-      - First 10 digits of milliseconds (sub-second precision)
-   3. Generate cryptographically secure random 256-bit salt
-   4. Combine all components: [ns|us|ms|datetime|salt]
-   5. Create SHA256 hash of combined material
-   ```
-
-2. **Challenge Storage**:
-   - All challenge components stored with encrypted PDF
-   - Challenge hash is stored encrypted in metadata
-   - Salt is included to prevent rainbow tables
-
-3. **Challenge Verification** (during decryption):
-   ```
-   1. Extract challenge components from metadata
-   2. Recreate hash using same formula
-   3. Compare recreated hash with stored hash
-   4. If mismatch: file is corrupted or tampered with
-   5. If match: file is verified as authentic
-   ```
-
-### Why Nanosecond Precision Makes Attacks Impossible
-
-**The Problem for Attackers:**
-- Even if attacker knows the exact date and time of encryption
-- Cannot reverse-engineer or calculate the exact nanosecond precision that was captured
-- Timestamp components are captured at runtime, not predictable
-- Salt adds 2^256 possible combinations
-
-**The Math:**
-- Nanoseconds have 10 digits of entropy (0-999,999,999)
-- Microseconds add 6 more digits (0-999,999)
-- Milliseconds add 3 more digits (0-999)
-- Combined with 256-bit random salt
-- Total entropy: >> 2^512 bits
-
-**Result:** Even brute-forcing all possible nanosecond values would be computationally infeasible.
-
-### Encryption Flow with GUN-112
-
-```
-1. Create GUN-112 challenge (nanosecond timestamp + salt)
-2. Derive encryption key from password (PBKDF2 + Argon2)
-3. Derive timestamp component from challenge timestamp
-4. Combine encryption key + timestamp component for final key
-5. Encrypt PDF data with AES-256-GCM + final key
-6. Encrypt metadata (including challenge) with base encryption key
-7. Store encrypted PDF + encrypted metadata + salt in container
-8. Return encrypted container as JSON
-```
-
-### Decryption Flow with GUN-112
-
-```
-1. Extract components from encrypted container
-2. Verify protocol is "GUN-112" (reject if different)
-3. Derive encryption key from password + stored salt
-4. Decrypt metadata with base encryption key
-5. **Verify GUN-112 challenge** (extract from metadata)
-   - Recreate challenge hash from components
-   - Compare with stored hash
-   - Reject if doesn't match (tampering detected)
-6. Derive timestamp component from verified challenge
-7. Combine encryption key + timestamp component for final key
-8. Decrypt PDF data with AES-256-GCM + final key
-9. Return decrypted PDF + metadata
-```
-
-### Security Properties
-
-- **Confidentiality**: AES-256-GCM provides encryption
-- **Authenticity**: GUN-112 challenge verifies file originates from encryption
-- **Integrity**: Challenge verification detects any tampering
-- **Non-Repudiation**: Timestamp proves when encryption occurred
-- **Anti-Replay**: Timestamp component prevents using old encrypted data
-
-
-# Timestamp Validation
-ENABLE_TIMESTAMP_VALIDATION = True
-TIMESTAMP_TOLERANCE = 300      # seconds (5 minutes)
-
-# Key Stretching
-KEY_STRETCH_ITERATIONS = 100000  # PBKDF2 iterations
-```
-
-### Security Levels
-
-**Basic** (Fast, Still Secure)
-- Time Cost: 2, Memory: 64 MB
-- Good for general use
-
-**Standard** (Recommended)
-- Time Cost: 4, Memory: 128 MB  
-- Default configuration
-
-**High** (Very Secure)
-- Time Cost: 8, Memory: 256 MB
-- For sensitive data
-
-**Maximum** (Paranoid)
-- Time Cost: 16, Memory: 512 MB
-- For mission-critical systems
-
-## 🧪 Testing
-
-Run the comprehensive test suite:
-
-```bash
-python -m pytest tests/ -v
-```
-
-Run specific tests:
-
-```bash
-python -m pytest tests/test_encryption.py::TestKeyManager -v
-python -m pytest tests/test_encryption.py::TestCryptoEngine -v
-python -m pytest tests/test_encryption.py::TestSecurityLayer -v
-python -m pytest tests/test_encryption.py::TestPDFEncryptionHandler -v
-```
-
-## 📖 Examples
-
-### Run Basic Examples
-
-```bash
-python examples/basic_usage.py
-```
-
-Shows:
-- Basic encryption/decryption
-- Metadata encryption
-- Brute-force protection
-- Security features overview
-
-### Run Advanced Examples
-
-```bash
-python examples/advanced_config.py
-```
-
-Shows:
-- Custom security configuration
-- Security levels explanation
-- Attack scenarios and protection
-- Password recommendations
-
-## 🛡️ Security Against Common Attacks
-
-### Brute-Force Attack
-- **Attack**: Trying many passwords
-- **Protection**: Argon2 (memory-hard) + Rate limiting
-- **Result**: Each attempt takes significant time; lockout after 5 failures
-
-### Dictionary Attack
-- **Attack**: Using common password lists
-- **Protection**: Key stretching (100,000 PBKDF2 iterations)
-- **Result**: Each password check takes 100,000x longer
-
-### Stolen Encrypted File
-- **Attack**: Obtaining encrypted file
-- **Protection**: AES-256-GCM + Timestamp validation
-- **Result**: File is useless; tampering detected
-
-### Password Interception
-- **Attack**: Intercepting password
-- **Protection**: Argon2 hashing + Salt + No plaintext storage
-- **Result**: Hash is computationally expensive to crack
-
-### GPU Acceleration
-- **Attack**: Using GPU to speed up password cracking
-- **Protection**: Memory-hard Argon2 + PBKDF2
-- **Result**: GPU acceleration ineffective
-
-## 📊 Performance Metrics
-
-| Operation | Time | Comment |
-|-----------|------|---------|
-| Encrypt 1MB PDF | ~200ms | One-time cost |
-| Decrypt 1MB PDF | ~200ms | One-time cost |
-| Derive Key | ~100ms | Per password verification |
-| Argon2 Hash | ~150ms | Per password hashing |
-
-*Metrics are approximate and depend on system specifications and configuration*
-
-## ⚠️ Important Notes
-
-1. **Key Storage**: Never store passwords in plaintext. Store only the Argon2 hash.
-2. **Salt**: Each password derivation uses a unique salt. Keep salts with encrypted files.
-3. **Metadata**: Metadata is encrypted but stored with encrypted PDF. Don't include sensitive secrets there.
-4. **Backup**: Always keep original unencrypted backups in a secure location.
-5. **Configuration**: Security configuration is hardcoded in the encrypted file. Cannot change config after encryption.
-
-## 🔐 API Reference
-
-### PDFEncryptionHandler
-
-```python
-handler = PDFEncryptionHandler()
-
-# Encrypt PDF with optional metadata
-encrypted = handler.encrypt_pdf(pdf_data, password, metadata=None)
-
-# Decrypt PDF
-decrypted_pdf, metadata = handler.decrypt_pdf(encrypted_data, password)
-```
-
-### KeyManager
-
-```python
-manager = KeyManager()
-
-# Derive key from password
-key, salt = manager.derive_key_from_password(password)
-
-# Hash password for storage
-hashed = manager.hash_password(password)
-
-# Verify password
-is_valid = manager.verify_password(password, hashed)
-```
-
-### CryptoEngine
-
-```python
-engine = CryptoEngine()
-
-# Encrypt data
-nonce, ciphertext, tag = engine.encrypt(data, key)
-
-# Decrypt data
-plaintext = engine.decrypt(nonce, ciphertext, tag, key)
-
-# Convenient methods
-encrypted = engine.encrypt_to_bytes(data, key)
-decrypted = engine.decrypt_from_bytes(encrypted, key)
-```
-
-### SecurityLayer
-
-```python
-security = SecurityLayer(max_attempts=5)
-
-# Record attempt
-allowed, message = security.record_attempt(identifier, success=False)
-
-# Check status
-status = security.get_status(identifier)
-
-# Reset attempts
-security.reset_attempts(identifier)
-```
-
-## 🚀 Production Deployment
-
-1. **Use strong Python version**: Python 3.10+
-2. **Update dependencies regularly**: `pip install --upgrade -r requirements.txt`
-3. **Configure security level** based on your threat model
-4. **Monitor lockout events** for suspicious activity
-5. **Backup encrypted files** to secure storage
-6. **Test disaster recovery** regularly
-7. **Use HTTPS** if serving over network
-8. **Run tests** after any configuration changes
-
-## 📝 License
-
-MIT License - See LICENSE file for details
-
-## 🤝 Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📞 Support
-
-For issues or questions:
-1. Check the examples in `examples/` directory
-2. Review `src/` documentation
-3. Run tests to verify setup
-4. Open an issue with reproduction steps
-
-## 🔄 Version History
-
-### v1.0.0 (Current)
-- Initial release
-- AES-256-GCM encryption
-- Argon2 key derivation
-- Rate limiting
-- Timestamp validation
-- Comprehensive tests and examples
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.1.0-orange.svg)](pyproject.toml)
+
+**GUN-112** is a production-ready Python library for encrypting PDF files with military-grade AES-256-GCM encryption, augmented by a nanosecond-precision time-based cryptographic challenge system. It protects your documents even when users choose weak passwords.
 
 ---
 
-**Built with security in mind. Protect your PDFs with confidence.** 🔒
+## Table of Contents
+
+- [What is GUN-112?](#what-is-gun-112)
+- [Security Architecture](#security-architecture)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+  - [Password-Based Encryption (GUN-112)](#password-based-encryption)
+  - [GUN-112-GKP (Ghost Key Protocol)](#gun-112-gkp-ghost-key-protocol)
+- [CLI Usage](#cli-usage)
+- [Python API Reference](#python-api-reference)
+  - [PDFEncryptionHandler](#pdfencryptionhandler)
+  - [IdentityManager](#identitymanager)
+  - [CryptoEngine](#cryptoengine)
+  - [KeyManager](#keymanager)
+  - [SecurityLayer](#securitylayer)
+- [Configuration](#configuration)
+- [Examples](#examples)
+- [Running Tests](#running-tests)
+- [Security Considerations](#security-considerations)
+- [Applying the GKP Rename — Files to Update](#applying-the-gkp-rename--files-to-update)
+- [License](#license)
+
+---
+
+## What is GUN-112?
+
+GUN-112 is a layered PDF encryption protocol built around a core insight: even if a password is stolen, the encrypted file should remain uncrackable. It does this by weaving nanosecond-precision timestamps into the encryption key itself.
+
+**Two encryption modes are supported:**
+
+| Mode | How it works | Best for |
+|---|---|---|
+| **GUN-112** (password-based) | User supplies a password; multi-layer key derivation hardens it | Personal files, shared secrets |
+| **GUN-112-GKP** (Ghost Key Protocol) | A random AES key is sealed with the recipient's RSA-4096 public key | Targeted delivery; no password needed |
+
+---
+
+## Security Architecture
+
+GUN-112 stacks five independent security layers. Breaking the encryption requires defeating all of them simultaneously.
+
+### Layer 1 — Argon2 Password Hashing
+The user's password is hashed with Argon2id — a memory-hard, GPU-resistant algorithm. This prevents rainbow table attacks and makes brute-force attempts extremely expensive.
+
+### Layer 2 — Dual-Pass PBKDF2 Key Derivation
+The raw password is stretched through two sequential PBKDF2 passes:
+- **Pass 1**: PBKDF2-HMAC-SHA256 at 100,000 iterations
+- **Pass 2**: PBKDF2-HMAC-SHA512 at 10,000 iterations
+
+This ensures the encryption key is deterministic (same password + salt = same key, every time) while being computationally costly to brute-force.
+
+### Layer 3 — GUN-112 Time-Based Challenge
+At the moment of encryption, a challenge is created from the current time captured at nanosecond precision. This challenge is salted and hashed (SHA-256), then stored alongside the ciphertext. During decryption, the challenge is re-verified — any tampering with the file causes this check to fail.
+
+The timestamp component is also mixed into the final AES key, meaning the key varies with each encryption even if the password is identical. Reverse-engineering this requires knowing the exact nanosecond of encryption, which is impossible after the fact.
+
+### Layer 4 — AES-256-GCM Authenticated Encryption
+Actual file content is encrypted with AES-256 in GCM mode. GCM provides both confidentiality (the content is hidden) and authenticity (any modification to the ciphertext is detected and rejected).
+
+### Layer 5 — Rate Limiting
+Decryption attempts are tracked per file (by SHA-256 fingerprint). After 5 failed attempts, the file is locked for 15 minutes. Lockout state persists to disk in `.security/lockout_log.json`.
+
+---
+
+## Installation
+
+**From PyPI (recommended):**
+```bash
+pip install gun112
+```
+
+**From source:**
+```bash
+git clone https://github.com/25f3002130/GUN-112.git
+cd GUN-112
+pip install -e .
+```
+
+**Requirements:** Python 3.9+, `cryptography>=42.0.2`, `argon2-cffi>=23.1.0`
+
+---
+
+## Quick Start
+
+### Password-Based Encryption
+
+```python
+from gun112 import PDFEncryptionHandler
+
+handler = PDFEncryptionHandler()
+
+# Read your PDF
+with open("document.pdf", "rb") as f:
+    pdf_data = f.read()
+
+# Encrypt
+encrypted = handler.encrypt_pdf(pdf_data, password="MySecurePassword!")
+
+# Save encrypted file
+with open("document.pdf.encrypted", "wb") as f:
+    f.write(encrypted)
+
+# Decrypt later
+with open("document.pdf.encrypted", "rb") as f:
+    encrypted_data = f.read()
+
+decrypted_pdf, metadata = handler.decrypt_pdf(encrypted_data, password="MySecurePassword!")
+
+with open("document_restored.pdf", "wb") as f:
+    f.write(decrypted_pdf)
+```
+
+### GUN-112-GKP (Ghost Key Protocol)
+
+GUN-112-GKP requires no shared password. The sender uses the recipient's public **GKP Identity Token**; only the recipient's physical device (which holds the matching private key) can decrypt the file.
+
+**Step 1 — Recipient generates their GKP identity (one-time setup):**
+```python
+from gun112.identity import IdentityManager
+
+manager = IdentityManager()
+token = manager.generate_identity()   # optionally pass a passphrase
+print("Share this token with senders:\n", token)
+```
+
+**Step 2 — Sender encrypts for the recipient:**
+```python
+from gun112 import PDFEncryptionHandler
+
+handler = PDFEncryptionHandler()
+
+with open("document.pdf", "rb") as f:
+    pdf_data = f.read()
+
+recipient_token = "..."   # GKP Identity Token provided by the recipient
+
+encrypted = handler.encrypt_pdf_for_recipient(pdf_data, recipient_token)
+
+with open("document.pdf.encrypted", "wb") as f:
+    f.write(encrypted)
+```
+
+**Step 3 — Recipient decrypts on their device:**
+```python
+from gun112 import PDFEncryptionHandler
+
+handler = PDFEncryptionHandler()
+
+with open("document.pdf.encrypted", "rb") as f:
+    encrypted_data = f.read()
+
+decrypted_pdf, metadata = handler.decrypt_pdf_identity(encrypted_data)
+
+with open("document_restored.pdf", "wb") as f:
+    f.write(decrypted_pdf)
+```
+
+---
+
+## CLI Usage
+
+GUN-112 ships with a `gun112` command-line tool installed automatically with the package.
+
+```
+gun112 help                                           Show all commands
+gun112 encrypt <file>                                 Encrypt a PDF with a password (GUN-112)
+gun112 encrypt <file> --recipient <TOKEN>             Encrypt for a specific recipient (GUN-112-GKP)
+gun112 decrypt <file>                                 Decrypt (auto-detects GUN-112 vs GKP)
+gun112 generate-identity                              Generate your GKP Identity Token
+gun112 show-identity                                  Display your GKP Identity Token
+gun112 reset-identity                                 Delete your GKP identity (irreversible)
+```
+
+**Options:**
+
+| Flag | Description |
+|---|---|
+| `-o`, `--output PATH` | Custom output file path |
+| `--recipient TOKEN` | Recipient's GKP Identity Token (enables GUN-112-GKP mode) |
+
+**Examples:**
+
+```bash
+# Password-based (GUN-112) — prompted to enter and confirm the password
+gun112 encrypt report.pdf
+gun112 decrypt report.pdf.encrypted
+
+# GUN-112-GKP — no password needed
+gun112 generate-identity
+gun112 show-identity                          # copy the token and send it to the sender
+gun112 encrypt report.pdf --recipient <GKP_TOKEN>
+gun112 decrypt report.pdf.encrypted          # auto-detects GKP mode
+```
+
+---
+
+## Python API Reference
+
+### PDFEncryptionHandler
+
+The main entry point for all encryption and decryption operations.
+
+```python
+from gun112 import PDFEncryptionHandler
+handler = PDFEncryptionHandler()
+```
+
+#### `encrypt_pdf(pdf_data, password, metadata=None) → bytes`
+
+Encrypts a PDF using password-based GUN-112. Raises `ValueError` on wrong password, challenge failure, tampering, or lockout.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pdf_data` | `bytes` | Raw PDF file content |
+| `password` | `str` | User password |
+| `metadata` | `dict`, optional | Arbitrary key-value metadata to encrypt alongside the PDF |
+
+Returns the encrypted container as `bytes`.
+
+#### `decrypt_pdf(encrypted_package, password) → tuple[bytes, dict | None]`
+
+Decrypts a password-locked GUN-112 PDF.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `encrypted_package` | `bytes` | Output of `encrypt_pdf` |
+| `password` | `str` | User password |
+
+Returns `(pdf_bytes, metadata_dict_or_None)`.
+
+#### `encrypt_pdf_for_recipient(pdf_data, recipient_token, metadata=None) → bytes`
+
+Encrypts a PDF using GUN-112-GKP for a specific recipient. No password required. A random AES-256 key is generated and sealed using the recipient's RSA-4096 GKP Identity Token.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `pdf_data` | `bytes` | Raw PDF file content |
+| `recipient_token` | `str` | Recipient's GKP Identity Token |
+| `metadata` | `dict`, optional | Arbitrary key-value metadata to encrypt alongside the PDF |
+
+#### `decrypt_pdf_identity(encrypted_package, passphrase=None) → tuple[bytes, dict | None]`
+
+Decrypts a GKP-locked PDF using this device's GKP private key.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `encrypted_package` | `bytes` | Output of `encrypt_pdf_for_recipient` |
+| `passphrase` | `str`, optional | Passphrase if the GKP private key was protected at generation time |
+
+---
+
+### IdentityManager
+
+Manages RSA-4096 keypairs and GKP Identity Tokens.
+
+```python
+from gun112.identity import IdentityManager
+manager = IdentityManager()
+```
+
+| Method | Description |
+|---|---|
+| `generate_identity(passphrase=None) → str` | Generate a new GKP keypair; returns the public Identity Token |
+| `get_identity_token() → str` | Retrieve the stored GKP Identity Token |
+| `get_identity_fingerprint(token=None) → str` | Get a human-readable colon-separated fingerprint |
+| `has_identity() → bool` | Check if a GKP identity exists on this device |
+| `reset_identity()` | Delete the keypair from disk (irreversible) |
+| `encrypt_symmetric_key(key, token) → bytes` | RSA-OAEP encrypt an AES key with a recipient's GKP token |
+| `decrypt_symmetric_key(encrypted_key, passphrase=None) → bytes` | RSA-OAEP decrypt using local GKP private key |
+
+GKP private keys are stored at `~/.gun112/private_key.pem` with `0o600` permissions (owner read/write only).
+
+---
+
+### CryptoEngine
+
+Low-level AES-256-GCM encryption primitives.
+
+```python
+from gun112 import CryptoEngine
+engine = CryptoEngine()
+```
+
+| Method | Description |
+|---|---|
+| `encrypt(data, key, aad=None) → (nonce, ciphertext, tag)` | Encrypt; returns separate components |
+| `decrypt(nonce, ciphertext, tag, key, aad=None) → bytes` | Decrypt and verify |
+| `encrypt_to_bytes(data, key, aad=None) → bytes` | Encrypt to single byte string (`nonce + ciphertext + tag`) |
+| `decrypt_from_bytes(encrypted, key, aad=None) → bytes` | Decrypt from single byte string |
+
+---
+
+### KeyManager
+
+Password hashing and key derivation.
+
+```python
+from gun112 import KeyManager
+km = KeyManager()
+```
+
+| Method | Description |
+|---|---|
+| `derive_key_from_password(password, salt=None) → (key, salt)` | PBKDF2 dual-pass key derivation |
+| `hash_password(password) → str` | Argon2 hash for storage |
+| `verify_password(password, argon2_hash) → bool` | Verify a password against stored Argon2 hash |
+
+---
+
+### SecurityLayer
+
+Rate-limiting and brute-force protection.
+
+```python
+from gun112 import SecurityLayer
+layer = SecurityLayer(max_attempts=5)
+```
+
+| Method | Description |
+|---|---|
+| `record_attempt(identifier, success=False) → (allowed, message)` | Record a decryption attempt; returns whether allowed to proceed |
+| `is_locked(identifier) → bool` | Check if an identifier is currently locked out |
+| `get_status(identifier) → dict` | Get attempt count, lock status, and remaining attempts |
+| `reset_attempts(identifier)` | Manually reset attempt counter |
+
+---
+
+## Configuration
+
+Security parameters are centralized in `SecurityConfig` and available via the `security_config` singleton:
+
+```python
+from gun112 import security_config
+
+print(security_config.ENCRYPTION_PROTOCOL)    # GUN-112
+print(security_config.GKP_PROTOCOL)           # GUN-112-GKP
+print(security_config.ENCRYPTION_ALGORITHM)   # AES-256-GCM
+print(security_config.MAX_DECRYPTION_ATTEMPTS) # 5
+print(security_config.LOCKOUT_DURATION)        # 15 minutes
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `ENCRYPTION_PROTOCOL` | `"GUN-112"` | Outer protocol identifier (all containers) |
+| `GKP_PROTOCOL` | `"GUN-112-GKP"` | GKP sub-protocol identifier |
+| `GKP_LOCK_MODE` | `"GKP"` | Value stored in container's `lock_mode` field |
+| `KEY_SIZE` | 32 bytes | AES key length (256 bits) |
+| `ARGON2_TIME_COST` | 4 | Argon2 iteration count |
+| `ARGON2_MEMORY_COST` | 128 MB | Argon2 memory requirement |
+| `ARGON2_PARALLELISM` | 4 | Argon2 thread count |
+| `KEY_STRETCH_ITERATIONS` | 100,000 | PBKDF2 iterations (first pass) |
+| `MAX_DECRYPTION_ATTEMPTS` | 5 | Failed attempts before lockout |
+| `LOCKOUT_DURATION` | 15 minutes | Lockout duration |
+| `TIMESTAMP_TOLERANCE` | 300 seconds | Tolerance window for timestamp validation |
+
+---
+
+## Examples
+
+The `examples/` directory contains ready-to-run scripts:
+
+```bash
+# Basic password-based encryption and decryption
+python examples/basic_usage.py
+
+# Advanced configuration and GUN-112-GKP (Ghost Key Protocol)
+python examples/advanced_config.py
+```
+
+**Encrypt a real file in three lines:**
+```python
+from gun112 import PDFEncryptionHandler
+handler = PDFEncryptionHandler()
+open("out.encrypted","wb").write(handler.encrypt_pdf(open("doc.pdf","rb").read(), "password"))
+```
+
+**Attach metadata to an encrypted file:**
+```python
+metadata = {"author": "Alice", "classification": "CONFIDENTIAL"}
+encrypted = handler.encrypt_pdf(pdf_data, "password", metadata=metadata)
+
+pdf, meta = handler.decrypt_pdf(encrypted, "password")
+print(meta)  # {'author': 'Alice', 'classification': 'CONFIDENTIAL'}
+```
+
+---
+
+## Running Tests
+
+```bash
+pip install -e ".[dev]"
+pytest
+pytest --cov=gun112 --cov-report=term-missing   # with coverage
+```
+
+Tests cover encryption/decryption correctness, wrong-password rejection, rate limiting, GKP identity keypair operations, and GUN-112 challenge verification.
+
+---
+
+## Security Considerations
+
+- **Lost password**: Password-locked files cannot be recovered without the original password. There is no back door.
+- **Lost GKP identity**: If you delete your GKP identity (or lose the device), any GKP-encrypted files targeting that identity are permanently unrecoverable. Back up `~/.gun112/private_key.pem` before resetting.
+- **GKP passphrase protection**: When generating a GKP identity, supply a passphrase to encrypt the private key at rest on disk.
+- **Rate limiting persistence**: Lockout state is written to `.security/lockout_log.json` in the working directory. In server deployments, ensure this path is writable and persistent.
+- **Timestamp validation**: GUN-112 verifies that the challenge timestamp in the encrypted metadata matches the one in the container. Any tampering with either field causes decryption to fail.
+
+---
+
+## Applying the GKP Rename — Files to Update
+
+The GUN-112-GKP (Ghost Key Protocol) naming was introduced after the initial release. If you are applying this rename to an existing copy of the codebase, here are every file that needs to change and exactly what to update in each.
+
+> **Note on backward compatibility**: The outer `"protocol"` field in all encrypted containers stays `"GUN-112"`. Only the `lock_mode` value changes from `"identity"` → `"GKP"`. This means **any files already encrypted with the old `lock_mode: "identity"` will fail to auto-detect correctly** until `pdf_handler.py` and `cli.py` are updated. Re-encrypt important files after the update if backward compatibility matters.
+
+---
+
+### `src/gun112/config.py`
+
+Add two new constants to the `SecurityConfig` class:
+
+```python
+# GUN-112-GKP: Ghost Key Protocol (identity/asymmetric sub-protocol)
+GKP_PROTOCOL = "GUN-112-GKP"
+GKP_LOCK_MODE = "GKP"  # value stored in the container's lock_mode field
+```
+
+This is the single source of truth for both strings. Every other file reads from `security_config` rather than hardcoding them.
+
+---
+
+### `src/gun112/pdf_handler.py`
+
+Three changes:
+
+**1. Module docstring** — update the description of the identity-based mode to say "GUN-112-GKP (Ghost Key Protocol)".
+
+**2. `encrypt_pdf_for_recipient`** — the container dict currently writes `"lock_mode": "identity"`. Replace with:
+
+```python
+"sub_protocol": security_config.GKP_PROTOCOL,  # "GUN-112-GKP"
+"lock_mode": security_config.GKP_LOCK_MODE,     # "GKP"
+```
+
+Same change applies inside `encryption_metadata` (the dict that gets encrypted alongside the PDF).
+
+**3. `decrypt_pdf` and `decrypt_pdf_identity`** — both methods check `lock_mode` to route or reject files. Update the string comparisons:
+
+```python
+# decrypt_pdf — reject GKP files
+if lock_mode == security_config.GKP_LOCK_MODE:   # was: == "identity"
+    raise ValueError("This file is GKP-locked (Ghost Key Protocol)...")
+
+# decrypt_pdf_identity — require GKP files
+if lock_mode != security_config.GKP_LOCK_MODE:   # was: != "identity"
+    raise ValueError("This file is password-locked (GUN-112), not GKP-locked...")
+```
+
+---
+
+### `src/gun112/identity.py`
+
+No functional changes — this file only needs its **docstrings and comments** updated. Rename every occurrence of "Identity Manager" / "identity-based" / "identity-locked" to use "GKP" / "Ghost Key Protocol" language. The class name `IdentityManager` and all method names stay the same.
+
+---
+
+### `src/gun112/cli.py`
+
+Two changes:
+
+**1. Auto-detect block in `decrypt_command`** — currently compares `lock_mode == "identity"`. Update to:
+
+```python
+if lock_mode == security_config.GKP_LOCK_MODE:
+```
+
+**2. User-facing text** — update the banner, help strings, and info/success messages to say "GUN-112-GKP" and "Ghost Key Protocol" where they currently say "identity-based" or "Identity Token". No command names change (`generate-identity`, `show-identity`, `reset-identity` stay as-is for CLI backward compatibility).
+
+---
+
+### `src/gun112/__init__.py`
+
+Add one new public constant:
+
+```python
+__gkp_protocol__ = "GUN-112-GKP"
+```
+
+Update the module docstring to mention both modes by name.
+
+---
+
+### `examples/basic_usage.py` and `examples/advanced_config.py`
+
+Update comments and `print()` strings that refer to "identity-based encryption" to say "GUN-112-GKP (Ghost Key Protocol)". No functional code changes needed in the examples.
+
+---
+
+### Files that do **not** need changes
+
+| File | Reason |
+|---|---|
+| `crypto_engine.py` | Pure AES-256-GCM logic; protocol-agnostic |
+| `key_manager.py` | Pure key derivation; no protocol references |
+| `security_layer.py` | Pure rate-limiting; no protocol references |
+| `utils.py` | Pure utility functions; no protocol references |
+| `gun112_challenge.py` | The challenge system is shared by both modes; no GKP-specific references |
+| `pyproject.toml` | Package metadata; no protocol strings |
+| `tests/` | Test logic uses method names, not protocol strings — no changes needed unless your tests assert on the `lock_mode` string value directly |
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for full terms.

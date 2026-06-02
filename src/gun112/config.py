@@ -7,11 +7,15 @@ from datetime import timedelta
 class SecurityConfig:
     """Security configuration for PDF encryption"""
     
-    # GUN-112 Protocol: Time-Based Cryptographic Challenge
+    # GUN-112 Protocol: Time-Based Cryptographic Challenge (umbrella protocol)
     ENCRYPTION_PROTOCOL = "GUN-112"
     ENCRYPTION_ALGORITHM = "AES-256-GCM"
     KEY_SIZE = 32  # 256 bits
-    
+
+    # GUN-112-GKP: Ghost Key Protocol (identity/asymmetric sub-protocol)
+    GKP_PROTOCOL = "GUN-112-GKP"
+    GKP_LOCK_MODE = "GKP"  # value stored in container's lock_mode field
+
     # Argon2 key derivation parameters
     ARGON2_TIME_COST = 4  # iterations
     ARGON2_MEMORY_COST = 128  # MB
