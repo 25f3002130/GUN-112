@@ -181,7 +181,7 @@ class TestIdentityBasedEncryption:
         manager.generate_identity()  # This creates a brand-new keypair
 
         # Attempting to decrypt with the hacker's key should fail
-        with pytest.raises(ValueError, match="Identity decryption failed"):
+        with pytest.raises(ValueError, match="GKP decryption failed"):
             handler.decrypt_pdf_identity(encrypted)
 
     def test_password_locked_file_rejects_identity_decrypt(self):
@@ -207,5 +207,5 @@ class TestIdentityBasedEncryption:
 
         # Trying password-based decryption on an identity-locked file
         # should fail because it's identity-locked
-        with pytest.raises(ValueError, match="identity-locked"):
+        with pytest.raises(ValueError, match="GKP-locked"):
             handler.decrypt_pdf(encrypted, "any_password")
