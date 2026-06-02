@@ -7,6 +7,10 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # IMPORTANT: this permission is required for trusted publishing
+      contents: read
+    
     steps:
     - uses: actions/checkout@v4
     
@@ -25,5 +29,4 @@ jobs:
         
     - name: Publish package to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
+      # Note: No password/token is provided here! It uses Trusted Publishing instead.
